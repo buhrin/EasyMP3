@@ -25,6 +25,26 @@ jobs:
         python -m pip install --upgrade pip
         pip install pyinstaller
 
+    - name: Determine version
+      id: version # Give the step an ID to reference its outputs
+      run: |
+        # Read MAJOR.MINOR from the VERSION file
+        # Trim whitespace just in case
+        major_minor=$(tr -d '[:space:]' < VERSION)
+        echo "Read MAJOR.MINOR from VERSION file: $major_minor"
+
+        # Use the GitHub run number as the patch version
+        patch_version=${{ github.run_number }}
+        echo "Using GitHub Run Number as patch: $patch_version"
+
+        # Construct the new tag (vMAJOR.MINOR.PATCH)
+        new_tag="v${major_minor}.${patch_version}"
+        echo "Calculated New Tag: $new_tag"
+
+        # Set the new tag as an output variable for subsequent steps
+        echo "new_tag=$new_tag" >> $GITHUB_OUTPUT
+      shell: bash # Use bash for easier string manipulation
+
     - name: Build executable with PyInstaller
       run: |
         pyinstaller --onefile --windowed --name EasyMP3 --add-data "bin;bin" src/main.py
@@ -32,10 +52,11 @@ jobs:
     - name: Create Release and Upload Asset
       uses: softprops/action-gh-release@v2
       with:
-        tag_name: build-${{ github.sha }} # Tag the release with the commit SHA
-        name: EasyMP3 Build ${{ github.sha }} # Name the release
+        tag_name: ${{ steps.version.outputs.new_tag }} # Use the calculated tag from the previous step
+        name: EasyMP3 Release ${{ steps.version.outputs.new_tag }} # Use the calculated tag in the release name
         body: |
-          Automated build of EasyMP3 based on commit ${{ github.sha }}.
+          Automated build of EasyMP3 ${{ steps.version.outputs.new_tag }}.
+          Based on commit ${{ github.sha }}.
           Download the EasyMP3.exe file below.
         files: dist/EasyMP3.exe # Path to the built executable to upload
       env:
