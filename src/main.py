@@ -17,12 +17,16 @@ import sv_ttk
 # Max concurrent downloads
 MAX_WORKERS = 10
 
+ICON_NAME = "icon.ico" # Define icon filename
+
 def get_base_path():
     """Gets the base path for bundled resources (project root for script, temp dir for frozen exe)."""
     if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
+        # Running as a bundled executable
         return Path(sys._MEIPASS)
     else:
-        return Path(__file__).parent.parent
+        # Running as a script
+        return Path(__file__).parent.parent # Project root
 
 def get_run_directory():
     """Gets the directory where the script/exe is running."""
@@ -35,6 +39,17 @@ BASE_PATH = get_base_path()
 BIN_DIR = BASE_PATH / "bin"
 YTDLP_PATH = BIN_DIR / "yt-dlp.exe"
 FFMPEG_PATH = BIN_DIR / "ffmpeg.exe"
+
+# --- Determine Assets Path Correctly ---
+if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
+    # Frozen executable: Assets are relative to BASE_PATH (_MEIPASS)
+    # based on `--add-data "src/assets;assets"` -> destination is "assets"
+    ASSETS_DIR = BASE_PATH / "assets"
+else:
+    # Script: Assets are in src/assets relative to project root (BASE_PATH)
+    ASSETS_DIR = BASE_PATH / "src" / "assets"
+
+ICON_PATH = ASSETS_DIR / ICON_NAME
 
 DEFAULT_OUTPUT_DIR = get_run_directory()
 
@@ -312,6 +327,18 @@ class EasyMP3App:
         self.root = root
         self.root.title("EasyMP3")
         # self.root.geometry("600x500") # Let ttk determine size
+
+        # Set window icon using the correctly determined ICON_PATH
+        try:
+            if ICON_PATH.is_file():
+                self.root.iconbitmap(default=ICON_PATH)
+                print(f"Attempting to load icon from: {ICON_PATH}")
+            else:
+                 print(f"Warning: Icon file not found at {ICON_PATH}")
+        except tk.TclError as e:
+            print(f"Warning: Could not set window icon ({ICON_PATH}): {e}")
+        except Exception as e:
+            print(f"Warning: An unexpected error occurred setting icon: {e}")
 
         # Apply the theme
         sv_ttk.set_theme("dark") # Options: "light", "dark"
