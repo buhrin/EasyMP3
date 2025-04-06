@@ -6,17 +6,23 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 
-def get_script_directory():
-    """Gets the directory containing the running script or frozen executable."""
-    if getattr(sys, 'frozen', False):
-        # The application is frozen (packaged by PyInstaller)
-        return Path(sys.executable).parent
+def get_base_path():
+    """Gets the base path for bundled resources (project root for script, temp dir for frozen exe)."""
+    if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
+        # Running as a bundled executable (PyInstaller onefile)
+        # sys._MEIPASS contains the path to the temporary folder where resources are extracted
+        return Path(sys._MEIPASS)
     else:
-        # The application is running as a normal Python script
-        return Path(__file__).parent.parent # Go up two levels (src -> project root)
+        # Running as a normal Python script
+        # Assume script is in 'src', project root is parent.parent
+        # (Going up from main.py -> src -> project root)
+        return Path(__file__).parent.parent
 
-SCRIPT_DIR = get_script_directory()
-BIN_DIR = SCRIPT_DIR / "bin"
+# Determine paths based on whether running as script or bundled exe
+BASE_PATH = get_base_path()
+# When frozen, binaries are in the 'bin' folder inside the extracted temp dir (BASE_PATH/bin)
+# When running as script, binaries are in 'bin' folder in project root (BASE_PATH/bin)
+BIN_DIR = BASE_PATH / "bin"
 YT_DLP_PATH = BIN_DIR / "yt-dlp.exe"
 FFMPEG_PATH = BIN_DIR / "ffmpeg.exe"
 
