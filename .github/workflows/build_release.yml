@@ -24,6 +24,7 @@ jobs:
       run: |
         python -m pip install --upgrade pip
         pip install pyinstaller
+        pip install pyperclip sv-ttk # Added dependencies for clipboard and theme
 
     - name: Determine version
       id: version # Give the step an ID to reference its outputs
