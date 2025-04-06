@@ -54,7 +54,7 @@ jobs:
       uses: softprops/action-gh-release@v2
       with:
         tag_name: ${{ steps.version.outputs.new_tag }} # Use the calculated tag from the previous step
-        name: EasyMP3 Release ${{ steps.version.outputs.new_tag }} # Use the calculated tag in the release name
+        name: EasyMP3 ${{ steps.version.outputs.new_tag }} # Use the calculated tag in the release name
         body: |
           Automated build of EasyMP3 ${{ steps.version.outputs.new_tag }}.
           Based on commit ${{ github.sha }}.
