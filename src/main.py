@@ -1,7 +1,9 @@
-import argparse
 import os
 import subprocess
 import sys
+import threading
+import tkinter as tk
+from tkinter import filedialog, messagebox, scrolledtext
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
@@ -9,47 +11,48 @@ from pathlib import Path
 def get_base_path():
     """Gets the base path for bundled resources (project root for script, temp dir for frozen exe)."""
     if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
-        # Running as a bundled executable (PyInstaller onefile)
-        # sys._MEIPASS contains the path to the temporary folder where resources are extracted
         return Path(sys._MEIPASS)
     else:
-        # Running as a normal Python script
-        # Assume script is in 'src', project root is parent.parent
-        # (Going up from main.py -> src -> project root)
         return Path(__file__).parent.parent
 
-# Determine paths based on whether running as script or bundled exe
+
+def get_run_directory():
+    if getattr(sys, 'frozen', False):
+        return Path(sys.executable).parent
+    else:
+        return Path(__file__).parent.parent
+
+
 BASE_PATH = get_base_path()
-# When frozen, binaries are in the 'bin' folder inside the extracted temp dir (BASE_PATH/bin)
-# When running as script, binaries are in 'bin' folder in project root (BASE_PATH/bin)
 BIN_DIR = BASE_PATH / "bin"
 YT_DLP_PATH = BIN_DIR / "yt-dlp.exe"
 FFMPEG_PATH = BIN_DIR / "ffmpeg.exe"
 
-def check_dependencies():
-    """Checks if required executables exist."""
-    if not YT_DLP_PATH.is_file():
-        print(f"Error: yt-dlp.exe not found in {BIN_DIR}")
-        sys.exit(1)
-    if not FFMPEG_PATH.is_file():
-        print(f"Error: ffmpeg.exe not found in {BIN_DIR}")
-        sys.exit(1)
-    print("Dependencies found.")
+DEFAULT_OUTPUT_DIR = get_run_directory()
 
-def download_audio(link, output_dir):
-    """Downloads audio for a single link using yt-dlp."""
-    print(f"Starting download for: {link.strip()}")
-    output_template = output_dir / "%(channel)s - %(title)s.%(ext)s"
-    output_template_final = output_dir / "%(channel)s - %(title)s.mp3"
+
+def check_dependencies():
+    if not YT_DLP_PATH.is_file():
+        messagebox.showerror("Dependency Error", f"Error: yt-dlp.exe not found in expected location: {BIN_DIR}")
+        return False
+    if not FFMPEG_PATH.is_file():
+        messagebox.showerror("Dependency Error", f"Error: ffmpeg.exe not found in expected location: {BIN_DIR}")
+        return False
+    return True
+
+
+def download_audio(link, output_dir, status_callback):
+    status_callback(f"Starting download for: {link.strip()}")
+    temp_download_subdir = output_dir / f"_temp_dl_{os.urandom(4).hex()}"
+    temp_download_subdir.mkdir(parents=True, exist_ok=True)
+
+    output_template = temp_download_subdir / "%(channel)s - %(title)s.%(ext)s"
 
     command = [
         str(YT_DLP_PATH),
         "-f", "bestaudio/best",
-        "-q", # Quiet
-        # "-ciw", # --continue --ignore-errors --write-info-json - Replaced by trying individually
         "--ignore-errors",
         "-o", str(output_template),
-        "-O", str(output_template_final), # Specify final mp3 name for download stage
         "--no-simulate",
         "--embed-thumbnail",
         "--extract-audio",
@@ -59,142 +62,239 @@ def download_audio(link, output_dir):
     ]
 
     try:
-        # Use CREATE_NO_WINDOW on Windows to prevent console windows popping up
         creationflags = 0
         if sys.platform == "win32":
             creationflags = subprocess.CREATE_NO_WINDOW
 
-        result = subprocess.run(command, check=True, capture_output=True, text=True, creationflags=creationflags)
-        print(f"Finished download for: {link.strip()}")
-        # print(result.stdout)
-        # print(result.stderr)
+        result = subprocess.run(command, check=True, capture_output=True, text=True, encoding='utf-8', errors='replace', creationflags=creationflags)
+        status_callback(f"Finished download for: {link.strip()}")
+
+        downloaded_files = list(temp_download_subdir.glob('*.mp3'))
+        if not downloaded_files:
+            status_callback(f"Error: No MP3 file found after download for {link.strip()} in {temp_download_subdir}")
+            return None
+        if len(downloaded_files) > 1:
+            status_callback(f"Warning: Multiple MP3 files found after download for {link.strip()}, using first: {downloaded_files[0].name}")
+
+        original_mp3_path = downloaded_files[0]
+        final_mp3_path = output_dir / original_mp3_path.name
+
+        try:
+            original_mp3_path.rename(final_mp3_path)
+        except OSError as move_err:
+            status_callback(f"Error moving {original_mp3_path.name} to {output_dir}: {move_err}")
+            return None
+        finally:
+            try:
+                os.rmdir(temp_download_subdir)
+            except OSError:
+                pass
+
+        return final_mp3_path
+
     except subprocess.CalledProcessError as e:
-        print(f"Error downloading {link.strip()}: {e}")
-        print(f"Stderr: {e.stderr}")
+        status_callback(f"Error downloading {link.strip()}: {e}")
+        status_callback(f"yt-dlp Stderr:\n{e.stderr}")
+        try:
+            import shutil
+            shutil.rmtree(temp_download_subdir)
+        except OSError:
+            pass
+        return None
     except Exception as e:
-        print(f"An unexpected error occurred during download for {link.strip()}: {e}")
+        status_callback(f"An unexpected error occurred during download for {link.strip()}: {e}")
+        try:
+            import shutil
+            shutil.rmtree(temp_download_subdir)
+        except OSError:
+            pass
+        return None
 
-def crop_thumbnail(mp3_file):
-    """Extracts, crops, and re-embeds the thumbnail for an MP3 file."""
-    if not mp3_file.exists() or mp3_file.suffix.lower() != '.mp3':
-        print(f"Skipping invalid file: {mp3_file}")
-        return
 
-    print(f"Processing thumbnail for: {mp3_file.name}")
+def crop_thumbnail(mp3_file, status_callback):
+    if not mp3_file or not mp3_file.exists() or mp3_file.suffix.lower() != '.mp3':
+        status_callback(f"Skipping thumbnail crop: Invalid input file {mp3_file}")
+        return False
+
+    status_callback(f"Processing thumbnail for: {mp3_file.name}")
     base_name = mp3_file.stem
-    temp_image_name = mp3_file.with_name(f"{base_name}_temp.jpg")
-    cropped_image_name = mp3_file.with_name(f"{base_name}_temp_cropped.jpg")
-    final_track_name = mp3_file.with_name(f"{base_name}_temp_final.mp3")
+    temp_dir = mp3_file.parent
+    temp_image_name = temp_dir / f"{base_name}_temp_thumb.jpg"
+    cropped_image_name = temp_dir / f"{base_name}_temp_thumb_cropped.jpg"
+    final_track_name = temp_dir / f"{base_name}_temp_final.mp3"
 
     try:
-        # Use CREATE_NO_WINDOW on Windows to prevent console windows popping up
         creationflags = 0
         if sys.platform == "win32":
             creationflags = subprocess.CREATE_NO_WINDOW
 
-        # 1. Extract thumbnail
         cmd_extract = [str(FFMPEG_PATH), "-hide_banner", "-loglevel", "error", "-y", "-i", str(mp3_file), str(temp_image_name)]
-        subprocess.run(cmd_extract, check=True, creationflags=creationflags)
+        result_extract = subprocess.run(cmd_extract, check=False, capture_output=True, text=True, encoding='utf-8', errors='replace', creationflags=creationflags)
+        if result_extract.returncode != 0:
+            if "error retrieving cover art" in result_extract.stderr.lower() or "attached picture extraction failed" in result_extract.stderr.lower():
+                status_callback(f"No thumbnail found in {mp3_file.name}. Skipping crop.")
+                return True
+            else:
+                status_callback(f"ffmpeg error extracting thumbnail from {mp3_file.name}:\n{result_extract.stderr}")
+                return False
 
-        # 2. Crop thumbnail
+        if not temp_image_name.exists():
+            status_callback(f"Thumbnail file {temp_image_name} not found after extraction attempt for {mp3_file.name}. Skipping crop.")
+            return False
+
         cmd_crop = [str(FFMPEG_PATH), "-hide_banner", "-loglevel", "error", "-y", "-i", str(temp_image_name), "-vf", "crop=ih:ih", str(cropped_image_name)]
-        subprocess.run(cmd_crop, check=True, creationflags=creationflags)
+        result_crop = subprocess.run(cmd_crop, check=False, capture_output=True, text=True, encoding='utf-8', errors='replace', creationflags=creationflags)
+        if result_crop.returncode != 0:
+            status_callback(f"ffmpeg error cropping thumbnail for {mp3_file.name}:\n{result_crop.stderr}")
+            if temp_image_name.exists(): os.remove(temp_image_name)
+            return False
 
-        # 3. Re-embed cropped thumbnail
         cmd_embed = [
             str(FFMPEG_PATH), "-hide_banner", "-loglevel", "error", "-y",
             "-i", str(mp3_file),
             "-i", str(cropped_image_name),
             "-map_metadata", "0",
-            "-map_metadata:s:1", "0:s:1", # Map image metadata
-            "-map", "0:a", # Map audio stream
-            "-map", "1",   # Map new image stream
-            "-acodec", "copy",
+            "-map_metadata:s:1", "0:s:1",
+            "-map", "0:a",
+            "-map", "1",
+            "-c:a", "copy",
             str(final_track_name)
         ]
-        subprocess.run(cmd_embed, check=True, creationflags=creationflags)
+        result_embed = subprocess.run(cmd_embed, check=False, capture_output=True, text=True, encoding='utf-8', errors='replace', creationflags=creationflags)
+        if result_embed.returncode != 0:
+            status_callback(f"ffmpeg error re-embedding thumbnail for {mp3_file.name}:\n{result_embed.stderr}")
+            if temp_image_name.exists(): os.remove(temp_image_name)
+            if cropped_image_name.exists(): os.remove(cropped_image_name)
+            return False
 
-        # 4. Cleanup and rename
         os.remove(temp_image_name)
         os.remove(cropped_image_name)
         os.remove(mp3_file)
         os.rename(final_track_name, mp3_file)
-        print(f"Successfully processed thumbnail for: {mp3_file.name}")
+        status_callback(f"Successfully processed thumbnail for: {mp3_file.name}")
+        return True
 
     except subprocess.CalledProcessError as e:
-        print(f"ffmpeg error processing {mp3_file.name}: {e}")
-        # Cleanup partial files if error occurred
+        status_callback(f"ffmpeg error processing {mp3_file.name}: {e}")
         if temp_image_name.exists(): os.remove(temp_image_name)
         if cropped_image_name.exists(): os.remove(cropped_image_name)
         if final_track_name.exists(): os.remove(final_track_name)
+        return False
     except Exception as e:
-        print(f"An unexpected error occurred processing {mp3_file.name}: {e}")
-        # Cleanup partial files if error occurred
+        status_callback(f"An unexpected error occurred processing {mp3_file.name}: {e}")
         if temp_image_name.exists(): os.remove(temp_image_name)
         if cropped_image_name.exists(): os.remove(cropped_image_name)
         if final_track_name.exists(): os.remove(final_track_name)
+        return False
 
-def main():
-    parser = argparse.ArgumentParser(description="Download YouTube audio and crop thumbnails.")
-    parser.add_argument("--links", required=True, help="Path to the text file containing YouTube links (one per line).")
-    parser.add_argument("--output", required=True, help="Path to the directory to save downloaded and processed MP3 files.")
-    parser.add_argument("--exclude", default="timo", help="Comma-separated list of directory names to exclude during cropping (e.g., 'timo,archive'). Default: 'timo'.")
-    parser.add_argument("--threads", type=int, default=10, help="Number of parallel downloads. Default: 10.")
-    parser.add_argument("--skip-download", action="store_true", help="Skip the download step and only perform cropping.")
-    parser.add_argument("--skip-crop", action="store_true", help="Skip the cropping step and only perform downloads.")
 
-    args = parser.parse_args()
+class EasyMP3App:
+    def __init__(self, master):
+        self.master = master
+        master.title("EasyMP3 Downloader & Cropper")
+        master.geometry("600x450")
 
-    links_file = Path(args.links)
-    output_dir = Path(args.output)
-    exclude_dirs = {ex.strip() for ex in args.exclude.split(',')} if args.exclude else set()
+        self.output_dir = tk.StringVar(master, value=str(DEFAULT_OUTPUT_DIR))
+        self.youtube_url = tk.StringVar(master)
+        self.is_processing = False
 
-    check_dependencies()
+        tk.Label(master, text="YouTube URL:").grid(row=0, column=0, sticky="w", padx=5, pady=5)
+        self.url_entry = tk.Entry(master, textvariable=self.youtube_url, width=60)
+        self.url_entry.grid(row=0, column=1, columnspan=2, sticky="ew", padx=5, pady=5)
 
-    if not links_file.is_file():
-        print(f"Error: Links file not found at {links_file}")
-        sys.exit(1)
+        tk.Label(master, text="Output Folder:").grid(row=1, column=0, sticky="w", padx=5, pady=5)
+        self.output_entry = tk.Entry(master, textvariable=self.output_dir, state="readonly", width=50)
+        self.output_entry.grid(row=1, column=1, sticky="ew", padx=5, pady=5)
+        self.browse_button = tk.Button(master, text="Browse...", command=self.browse_output_dir)
+        self.browse_button.grid(row=1, column=2, sticky="ew", padx=5, pady=5)
 
-    output_dir.mkdir(parents=True, exist_ok=True)
+        self.start_button = tk.Button(master, text="Start Download & Crop", command=self.start_processing)
+        self.start_button.grid(row=2, column=0, columnspan=3, pady=10)
 
-    # --- Download Step ---
-    if not args.skip_download:
-        print("--- Starting Download Phase ---")
-        with open(links_file, 'r') as f:
-            links = f.readlines()
+        tk.Label(master, text="Status:").grid(row=3, column=0, sticky="nw", padx=5, pady=5)
+        self.status_text = scrolledtext.ScrolledText(master, height=15, width=70, state="disabled")
+        self.status_text.grid(row=4, column=0, columnspan=3, padx=5, pady=5, sticky="nsew")
 
-        with ThreadPoolExecutor(max_workers=args.threads) as executor:
-            # Create a list of futures
-            futures = [executor.submit(download_audio, link, output_dir) for link in links if link.strip()]
-            # Wait for all futures to complete (optional, but good practice)
-            for future in futures:
-                future.result() # Can capture return values or exceptions here if needed
-        print("--- Download Phase Complete ---")
-    else:
-        print("--- Skipping Download Phase ---")
+        master.grid_columnconfigure(1, weight=1)
+        master.grid_rowconfigure(4, weight=1)
 
-    # --- Cropping Step ---
-    if not args.skip_crop:
-        print("--- Starting Cropping Phase ---")
-        files_to_process = []
-        for item in output_dir.rglob('*.mp3'):
-            if item.is_file():
-                # Check if any part of the path contains an excluded directory name
-                if not any(excluded in item.parts for excluded in exclude_dirs):
-                    files_to_process.append(item)
+    def browse_output_dir(self):
+        directory = filedialog.askdirectory(initialdir=self.output_dir.get(), title="Select Output Folder")
+        if directory:
+            self.output_dir.set(directory)
+
+    def update_status(self, message):
+        def _update():
+            self.status_text.config(state="normal")
+            self.status_text.insert(tk.END, message + "\n")
+            self.status_text.see(tk.END)
+            self.status_text.config(state="disabled")
+        self.master.after(0, _update)
+
+    def start_processing(self):
+        if self.is_processing:
+            self.update_status("Already processing!")
+            return
+
+        url = self.youtube_url.get().strip()
+        output_path_str = self.output_dir.get()
+
+        if not url:
+            messagebox.showwarning("Input Error", "Please enter a YouTube URL.")
+            return
+
+        if not output_path_str:
+            messagebox.showwarning("Input Error", "Please select an output folder.")
+            return
+
+        output_path = Path(output_path_str)
+        output_path.mkdir(parents=True, exist_ok=True)
+
+        if not check_dependencies():
+            return
+
+        self.start_button.config(state="disabled", text="Processing...")
+        self.status_text.config(state="normal")
+        self.status_text.delete('1.0', tk.END)
+        self.status_text.config(state="disabled")
+        self.is_processing = True
+        self.update_status(f"Starting process for URL: {url}")
+        self.update_status(f"Output folder: {output_path}")
+
+        thread = threading.Thread(target=self.processing_thread, args=(url, output_path), daemon=True)
+        thread.start()
+
+    def processing_thread(self, url, output_path):
+        final_mp3_file = None
+        try:
+            self.update_status("--- Starting Download --- ")
+            final_mp3_file = download_audio(url, output_path, self.update_status)
+            if final_mp3_file:
+                self.update_status("--- Download Complete --- ")
+                self.update_status("--- Starting Thumbnail Crop --- ")
+                crop_success = crop_thumbnail(final_mp3_file, self.update_status)
+                if crop_success:
+                    self.update_status("--- Thumbnail Crop Complete --- ")
                 else:
-                    print(f"Skipping {item} due to exclusion rules.")
+                    self.update_status("--- Thumbnail Crop Failed (see errors above) --- ")
+            else:
+                self.update_status("--- Download Failed (see errors above) --- ")
 
-        # Crop sequentially for now, parallelizing ffmpeg can be tricky
-        print(f"Found {len(files_to_process)} MP3 files to process for cropping.")
-        for mp3_file in files_to_process:
-            crop_thumbnail(mp3_file)
+            self.update_status("\nProcessing finished.")
 
-        print("--- Cropping Phase Complete ---")
-    else:
-        print("--- Skipping Cropping Phase ---")
+        except Exception as e:
+            self.update_status(f"\nAn unexpected error occurred in processing thread: {e}")
+            import traceback
+            self.update_status(f"Traceback:\n{traceback.format_exc()}")
+        finally:
+            self.master.after(0, self.processing_finished)
 
-    print("All tasks finished.")
+    def processing_finished(self):
+        self.is_processing = False
+        self.start_button.config(state="normal", text="Start Download & Crop")
+
 
 if __name__ == "__main__":
-    main()
+    root = tk.Tk()
+    app = EasyMP3App(root)
+    root.mainloop()
