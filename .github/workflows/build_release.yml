@@ -22,13 +22,9 @@ jobs:
 
     - name: Install dependencies
       run: |
-        python -m venv venv
-        .\venv\Scripts\activate
-        pip install --upgrade pip
-        pip install pyinstaller==6.7.0 pyperclip==1.8.2 sv-ttk==2.6
-        echo "PyInstaller version: $(pyinstaller --version)"
-        # Build the executable, add bin and assets data, set icon
-        pyinstaller --onefile --windowed --name EasyMP3 --icon=src/assets/icon.ico --add-data "bin;bin" --add-data "src/assets;assets" src/main.py
+        python -m pip install --upgrade pip
+        pip install pyinstaller
+        pip install pyperclip sv-ttk # Added dependencies for clipboard and theme
 
     - name: Determine version
       id: version # Give the step an ID to reference its outputs
@@ -49,6 +45,10 @@ jobs:
         # Set the new tag as an output variable for subsequent steps
         echo "new_tag=$new_tag" >> $GITHUB_OUTPUT
       shell: bash # Use bash for easier string manipulation
+
+    - name: Build executable with PyInstaller
+      run: |
+        pyinstaller --onefile --windowed --name EasyMP3 --icon=src/assets/icon.ico --add-data "bin;bin" --add-data "src/assets;assets" src/main.py
 
     - name: Create Release and Upload Asset
       uses: softprops/action-gh-release@v2
