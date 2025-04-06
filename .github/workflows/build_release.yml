@@ -14,6 +14,8 @@ jobs:
     steps:
     - name: Check out repository code
       uses: actions/checkout@v4 # Action to get your code
+      with:
+        fetch-depth: 0 # Fetch all history for all tags and branches
 
     - name: Set up Python
       uses: actions/setup-python@v5
@@ -34,9 +36,20 @@ jobs:
         major_minor=$(tr -d '[:space:]' < VERSION)
         echo "Read MAJOR.MINOR from VERSION file: $major_minor"
 
-        # Use the GitHub run number as the patch version
-        patch_version=${{ github.run_number }}
-        echo "Using GitHub Run Number as patch: $patch_version"
+        # Find the latest tag for the current MAJOR.MINOR version
+        latest_tag=$(git tag --list "v${major_minor}.*" --sort=-v:refname | head -n 1)
+
+        if [ -z "$latest_tag" ]; then
+          # No existing tag for this MAJOR.MINOR, start patch at 0
+          patch_version=0
+          echo "No previous tag found for v${major_minor}. Starting patch version at 0."
+        else
+          # Existing tag found, increment patch version
+          # Extract patch number: vX.Y.Z -> Z
+          last_patch=$(echo "$latest_tag" | sed 's/.*\\.//')
+          patch_version=$((last_patch + 1))
+          echo "Found latest tag ${latest_tag}. Incrementing patch version to ${patch_version}."
+        fi
 
         # Construct the new tag (vMAJOR.MINOR.PATCH)
         new_tag="v${major_minor}.${patch_version}"
