@@ -1,5 +1,11 @@
 # EasyMP3 Downloader
 
+## Disclaimer
+
+This disclaimer is the only thing I typed by hand. Everything else in this repo is entirely vibe-coded with Windsurf and Google's Gemini 2.5 Pro model. Enjoy!
+
+## Description
+
 EasyMP3 is a simple desktop application for Windows that allows you to download the audio from YouTube videos as MP3 files. It automatically fetches the video thumbnail, crops it to a square, and embeds it into the downloaded MP3 file.
 
 ## Features
@@ -16,7 +22,7 @@ EasyMP3 is a simple desktop application for Windows that allows you to download 
 
 ## How to Use
 
-1.  **Download the Latest Release:** Grab the `EasyMP3.exe` file from the [**GitHub Releases Page**](https://github.com/buhrin/EasyMP3/releases/latest). *(Note: Replace `buhrin/EasyMP3` with your actual GitHub username/repository if different)*
+1.  **Download the Latest Release:** Grab the `EasyMP3.exe` file from the [**GitHub Releases Page**](https://github.com/buhrin/EasyMP3/releases/latest).
 2.  **Run the Executable:** Double-click `EasyMP3.exe` to start the application.
 3.  **(Optional) Select Output Folder:** Use the "Browse..." button to choose where your MP3 files will be saved. By default, they are saved in the same folder as the executable.
 4.  **Copy YouTube URL:** Copy the full URL of the YouTube video you want to download to your clipboard (e.g., `https://www.youtube.com/watch?v=dQw4w9WgXcQ`).
