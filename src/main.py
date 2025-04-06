@@ -84,7 +84,7 @@ def download_audio(task_id, link, output_dir, status_callback, app):
             link.strip()
         ]
 
-        schedule_gui_update(app, task_id, "Status", "Running yt-dlp...")
+        # schedule_gui_update(app, task_id, "Status", "Running yt-dlp...")
         # Run yt-dlp, capture output
         creationflags = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
         result = subprocess.run(command, check=True, capture_output=True, text=True, encoding='utf-8', errors='replace', creationflags=creationflags)
@@ -99,7 +99,7 @@ def download_audio(task_id, link, output_dir, status_callback, app):
         original_mp3_path = downloaded_files[0]
         schedule_gui_update(app, task_id, "Filename", original_mp3_path.name)
 
-        schedule_gui_update(app, task_id, "Status", "Download complete")
+        # schedule_gui_update(app, task_id, "Status", "Download complete")
 
         # Move the final MP3 file to the target output directory
         target_mp3_path = Path(output_dir) / original_mp3_path.name
@@ -147,7 +147,7 @@ def download_audio(task_id, link, output_dir, status_callback, app):
 # --- Reverted crop_thumbnail logic ---
 def crop_thumbnail(task_id, mp3_file, status_callback, app):
     """Extracts, crops to square, and re-embeds thumbnail using ffmpeg."""
-    schedule_gui_update(app, task_id, "Status", "Processing thumbnail...")
+    schedule_gui_update(app, task_id, "Status", "Processing...")
     temp_dir = mp3_file.parent / f"_thumb_proc_{mp3_file.stem}_{os.urandom(4).hex()}"
     temp_dir.mkdir(exist_ok=True)
 
@@ -159,7 +159,7 @@ def crop_thumbnail(task_id, mp3_file, status_callback, app):
 
     try:
         # 1. Extract Thumbnail
-        schedule_gui_update(app, task_id, "Status", "Extracting thumbnail...")
+        # schedule_gui_update(app, task_id, "Status", "Extracting thumbnail...")
         cmd_extract = [str(FFMPEG_PATH), "-hide_banner", "-loglevel", "error", "-y", "-i", str(mp3_file), "-map", "0:v", "-map", "-0:V", "-c", "copy", str(temp_image_name)]
         result_extract = subprocess.run(cmd_extract, check=False, capture_output=True, text=True, encoding='utf-8', errors='replace', creationflags=creationflags) # check=False
 
@@ -180,7 +180,7 @@ def crop_thumbnail(task_id, mp3_file, status_callback, app):
             return True # Not an error, just no thumbnail to crop
 
         # 2. Crop Thumbnail
-        schedule_gui_update(app, task_id, "Status", "Cropping thumbnail...")
+        # schedule_gui_update(app, task_id, "Status", "Cropping thumbnail...")
         cmd_crop = [str(FFMPEG_PATH), "-hide_banner", "-loglevel", "error", "-y", "-i", str(temp_image_name), "-vf", "crop=ih:ih", str(cropped_image_name)]
         result_crop = subprocess.run(cmd_crop, check=True, capture_output=True, text=True, encoding='utf-8', errors='replace', creationflags=creationflags)
         # print(f"ffmpeg crop stdout: {result_crop.stdout}")
@@ -190,7 +190,7 @@ def crop_thumbnail(task_id, mp3_file, status_callback, app):
             raise FileNotFoundError("Cropped image file not found after ffmpeg crop operation.")
 
         # 3. Re-embed Cropped Thumbnail
-        schedule_gui_update(app, task_id, "Status", "Re-embedding...")
+        # schedule_gui_update(app, task_id, "Status", "Re-embedding...")
         cmd_embed = [
             str(FFMPEG_PATH), "-hide_banner", "-loglevel", "error", "-y",
             "-i", str(mp3_file), # Input MP3
@@ -215,7 +215,7 @@ def crop_thumbnail(task_id, mp3_file, status_callback, app):
                 raise FileNotFoundError("Final MP3 with re-embedded thumbnail not found.")
 
             # 4. Replace original MP3 with the new one
-            schedule_gui_update(app, task_id, "Status", "Finalizing...")
+            # schedule_gui_update(app, task_id, "Status", "Finalizing...")
             os.replace(str(final_track_name), str(mp3_file)) # Use os.replace for atomic move/replace
             print(f"Successfully processed thumbnail for: {mp3_file.name}")
             return True # Indicate success
@@ -272,7 +272,7 @@ def process_task(task_id, url, output_path, app):
         mp3_path, temp_dir = download_audio(task_id, url, output_path, schedule_gui_update, app)
 
         if mp3_path: # If download succeeded (mp3_path is the final Path object)
-            schedule_gui_update(app, task_id, "Status", "Processing thumbnail...")
+            # schedule_gui_update(app, task_id, "Status", "Processing thumbnail...")
             # Call reverted crop_thumbnail
             crop_result = crop_thumbnail(task_id, mp3_path, schedule_gui_update, app)
             if crop_result:
@@ -310,7 +310,7 @@ def process_task(task_id, url, output_path, app):
 class EasyMP3App:
     def __init__(self, root):
         self.root = root
-        self.root.title("EasyMP3 Downloader")
+        self.root.title("EasyMP3")
         # self.root.geometry("600x500") # Let ttk determine size
 
         # Apply the theme
