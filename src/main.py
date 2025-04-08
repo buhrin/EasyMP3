@@ -87,6 +87,7 @@ def download_audio(task_id, link, output_dir, status_callback, app):
 
         command = [
             str(YTDLP_PATH),
+            "-f", "bestaudio/best",
             "--no-playlist",
             "--extract-audio",
             "--audio-format", "mp3",
@@ -175,7 +176,7 @@ def crop_thumbnail(task_id, mp3_file, status_callback, app):
     try:
         # 1. Extract Thumbnail
         # schedule_gui_update(app, task_id, "Status", "Extracting thumbnail...")
-        cmd_extract = [str(FFMPEG_PATH), "-hide_banner", "-loglevel", "error", "-y", "-i", str(mp3_file), "-map", "0:v", "-map", "-0:V", "-c", "copy", str(temp_image_name)]
+        cmd_extract = [str(FFMPEG_PATH), "-hide_banner", "-loglevel", "error", "-y", "-i", str(mp3_file), str(temp_image_name)]
         result_extract = subprocess.run(cmd_extract, check=False, capture_output=True, text=True, encoding='utf-8', errors='replace', creationflags=creationflags) # check=False
 
         # Check common ffmpeg message for missing art
@@ -210,12 +211,11 @@ def crop_thumbnail(task_id, mp3_file, status_callback, app):
             str(FFMPEG_PATH), "-hide_banner", "-loglevel", "error", "-y",
             "-i", str(mp3_file), # Input MP3
             "-i", str(cropped_image_name), # Input Cropped JPG
-            "-map", "0:a", # Map audio from first input
-            "-map", "1:v", # Map video from second input (cropped image)
-            "-c", "copy", # Copy streams without re-encoding
-            "-disposition:v", "attached_pic", # Set disposition for album art
-            "-metadata:s:v", "title=Album cover", # Add metadata title
-            "-metadata:s:v", "comment=Cover (front)", # Add metadata comment
+            "-map_metadata", "0",
+            "-map_metadata:s:1", "0:s:1", # Map image metadata
+            "-map", "0:a", # Map audio stream
+            "-map", "1",   # Map new image stream
+            "-acodec", "copy",
             str(final_track_name), # Output MP3 path
             '-y' # Overwrite output without asking
         ]
