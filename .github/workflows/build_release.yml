@@ -46,7 +46,7 @@ jobs:
         else
           # Existing tag found, increment patch version
           # Extract patch number: vX.Y.Z -> Z
-          last_patch=$(echo "$latest_tag" | sed 's/.*\\.//')
+          last_patch=$(echo "$latest_tag" | sed 's/.*\.//')
           patch_version=$((last_patch + 1))
           echo "Found latest tag ${latest_tag}. Incrementing patch version to ${patch_version}."
         fi
