@@ -46,7 +46,7 @@ If you want to build the executable yourself:
 
 1.  Clone the repository.
 2.  Ensure you have Python 3 installed.
-3.  Install dependencies: `pip install pyinstaller pyperclip sv_ttk`
+3.  Install dependencies: `uv sync`
 4.  Make sure `yt-dlp.exe` and `ffmpeg.exe` are present in a `bin` directory in the project root.
 5.  Run PyInstaller from the project root directory:
     ```bash

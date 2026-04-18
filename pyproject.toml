@@ -1,0 +1,11 @@
+[project]
+name = "EasyMP3"
+version = "1.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.14"
+dependencies = [
+    "pyinstaller>=6.19.0",
+    "pyperclip>=1.11.0",
+    "sv-ttk>=2.6.1",
+]
