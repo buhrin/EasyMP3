@@ -1,9 +1,28 @@
+import json
 import os
 import shutil
 import subprocess
+from dataclasses import dataclass
 from pathlib import Path
 
-from utils import get_subprocess_creationflags
+from utils import build_video_url, get_subprocess_creationflags
+
+YOUTUBE_EXTRACTOR_ARGS = "youtube:player_client=android,web"
+
+
+@dataclass(frozen=True)
+class PlaylistEntry:
+    video_id: str
+    title: str
+    url: str
+
+
+@dataclass(frozen=True)
+class PlaylistInspectionResult:
+    title: str
+    playlist_id: str | None
+    entries: list[PlaylistEntry]
+    unavailable_count: int
 
 
 def download_audio(task_id, link, output_dir, ytdlp_path, update_task):
@@ -19,6 +38,8 @@ def download_audio(task_id, link, output_dir, ytdlp_path, update_task):
             str(ytdlp_path),
             "-f",
             "bestaudio/best",
+            "--extractor-args",
+            YOUTUBE_EXTRACTOR_ARGS,
             "--no-playlist",
             "--extract-audio",
             "--audio-format",
@@ -69,6 +90,62 @@ def download_audio(task_id, link, output_dir, ytdlp_path, update_task):
 
     _cleanup_temp_directory(temp_download_subdir)
     return None, None
+
+
+def inspect_playlist_metadata(playlist_url, ytdlp_path):
+    command = [
+        str(ytdlp_path),
+        "--flat-playlist",
+        "--dump-single-json",
+        "--extractor-args",
+        YOUTUBE_EXTRACTOR_ARGS,
+        "--ignore-errors",
+        "--quiet",
+        "--no-warnings",
+        playlist_url.strip(),
+    ]
+
+    result = subprocess.run(
+        command,
+        check=True,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        creationflags=get_subprocess_creationflags(),
+    )
+
+    payload = json.loads(result.stdout)
+    title = payload.get("title") or payload.get("playlist_title") or "Playlist"
+    playlist_id = payload.get("id")
+
+    entries = []
+    unavailable_count = 0
+    for entry in payload.get("entries") or []:
+        if not isinstance(entry, dict):
+            unavailable_count += 1
+            continue
+
+        video_id = entry.get("id") or entry.get("url")
+        if not video_id:
+            unavailable_count += 1
+            continue
+
+        entry_title = entry.get("title") or f"Video {len(entries) + 1}"
+        entries.append(
+            PlaylistEntry(
+                video_id=video_id,
+                title=entry_title,
+                url=build_video_url(video_id),
+            )
+        )
+
+    return PlaylistInspectionResult(
+        title=title,
+        playlist_id=playlist_id,
+        entries=entries,
+        unavailable_count=unavailable_count,
+    )
 
 
 def _cleanup_temp_directory(temp_download_subdir):

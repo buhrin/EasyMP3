@@ -1,18 +1,17 @@
 import sys
 import tkinter as tk
-from tkinter import messagebox
 
-from app import EasyMP3App
+from app import EasyMP3App, show_choice_dialog
 from config import BIN_DIR, FFMPEG_PATH, YTDLP_PATH
 
 
-def check_dependencies():
+def check_dependencies(root):
     """Check if yt-dlp and ffmpeg executables exist."""
     if not YTDLP_PATH.is_file():
-        messagebox.showerror("Dependency Error", f"Error: yt-dlp.exe not found in expected location: {BIN_DIR}")
+        show_choice_dialog(root, "Dependency Error", f"Error: yt-dlp.exe not found in expected location: {BIN_DIR}", [("OK", True)])
         return False
     if not FFMPEG_PATH.is_file():
-        messagebox.showerror("Dependency Error", f"Error: ffmpeg.exe not found in expected location: {BIN_DIR}")
+        show_choice_dialog(root, "Dependency Error", f"Error: ffmpeg.exe not found in expected location: {BIN_DIR}", [("OK", True)])
         return False
     return True
 
@@ -22,9 +21,13 @@ if __name__ == "__main__":
     # Recommend installing dependencies if running directly:
     # pip install pyperclip sv_ttk
 
-    if not check_dependencies():
+    root = tk.Tk()
+    root.withdraw()
+
+    if not check_dependencies(root):
+        root.destroy()
         sys.exit(1)  # Exit if yt-dlp/ffmpeg dependencies are missing
 
-    root = tk.Tk()
     app = EasyMP3App(root)
+    root.deiconify()
     root.mainloop()
