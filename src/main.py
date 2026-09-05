@@ -3,6 +3,7 @@ import tkinter as tk
 
 from app import EasyMP3App, show_choice_dialog
 from config import BIN_DIR, FFMPEG_PATH, YTDLP_PATH
+from utils import prepare_external_subprocesses
 
 
 def check_dependencies(root):
@@ -28,6 +29,7 @@ if __name__ == "__main__":
         root.destroy()
         sys.exit(1)  # Exit if yt-dlp/ffmpeg dependencies are missing
 
+    prepare_external_subprocesses()
     app = EasyMP3App(root)
     root.deiconify()
     root.mainloop()

@@ -1,8 +1,11 @@
 import os
+import logging
 import shutil
 import subprocess
 
 from utils import get_subprocess_creationflags
+
+LOGGER = logging.getLogger(__name__)
 
 
 def crop_thumbnail(task_id, mp3_file, ffmpeg_path, update_task):
@@ -27,6 +30,7 @@ def crop_thumbnail(task_id, mp3_file, ffmpeg_path, update_task):
                 str(mp3_file),
                 str(temp_image_name),
             ],
+            stdin=subprocess.DEVNULL,
             check=False,
             capture_output=True,
             text=True,
@@ -38,15 +42,15 @@ def crop_thumbnail(task_id, mp3_file, ffmpeg_path, update_task):
         if result_extract.returncode != 0:
             if _is_missing_cover_art_error(result_extract.stderr):
                 update_task(task_id, "Status", "No thumbnail found")
-                print(f"No thumbnail found in {mp3_file.name}. Skipping crop.")
+                LOGGER.info("No thumbnail found in %s; skipping crop", mp3_file.name)
                 return True
             update_task(task_id, "Status", "Error: Extract failed")
-            print(f"ffmpeg error extracting thumbnail from {mp3_file.name}:\n{result_extract.stderr}")
+            LOGGER.error("ffmpeg failed to extract thumbnail from %s:\n%s", mp3_file.name, result_extract.stderr)
             return False
 
         if not temp_image_name.exists():
             update_task(task_id, "Status", "No thumbnail found")
-            print(f"Thumbnail file {temp_image_name} not found after extraction attempt for {mp3_file.name}.")
+            LOGGER.info("Thumbnail file was not produced for %s", mp3_file.name)
             return True
 
         subprocess.run(
@@ -62,6 +66,7 @@ def crop_thumbnail(task_id, mp3_file, ffmpeg_path, update_task):
                 "crop=ih:ih",
                 str(cropped_image_name),
             ],
+            stdin=subprocess.DEVNULL,
             check=True,
             capture_output=True,
             text=True,
@@ -97,6 +102,7 @@ def crop_thumbnail(task_id, mp3_file, ffmpeg_path, update_task):
                 str(final_track_name),
                 "-y",
             ],
+            stdin=subprocess.DEVNULL,
             check=True,
             capture_output=True,
             text=True,
@@ -109,30 +115,27 @@ def crop_thumbnail(task_id, mp3_file, ffmpeg_path, update_task):
             raise FileNotFoundError("Final MP3 with re-embedded thumbnail not found.")
 
         os.replace(str(final_track_name), str(mp3_file))
-        print(f"Successfully processed thumbnail for: {mp3_file.name}")
+        LOGGER.debug("Successfully processed thumbnail for %s", mp3_file.name)
         return True
 
     except subprocess.CalledProcessError as error:
         update_task(task_id, "Status", "Error: Crop failed")
-        print(f"ffmpeg error (Code: {error.returncode}) processing {mp3_file.name}.\nFull stderr:\n{error.stderr}")
+        LOGGER.error("ffmpeg failed (code %s) processing %s:\n%s", error.returncode, mp3_file.name, error.stderr)
         return False
     except FileNotFoundError as error:
         update_task(task_id, "Status", "Error: Crop File Missing")
-        print(f"File not found during thumbnail processing: {error}")
+        LOGGER.error("File missing during thumbnail processing: %s", error)
         return False
     except Exception as error:
         update_task(task_id, "Status", "Error: Crop failed")
-        print(f"Unexpected error processing {mp3_file.name}: {error}")
-        import traceback
-
-        traceback.print_exc()
+        LOGGER.exception("Unexpected error processing %s", mp3_file.name)
         return False
     finally:
         try:
             if temp_dir.exists():
                 shutil.rmtree(temp_dir)
         except Exception as cleanup_error:
-            print(f"Error cleaning up temp directory {temp_dir}: {cleanup_error}")
+            LOGGER.warning("Could not clean temporary directory %s: %s", temp_dir, cleanup_error)
 
 
 def _is_missing_cover_art_error(stderr):

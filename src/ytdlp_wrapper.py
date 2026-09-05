@@ -1,4 +1,5 @@
 import json
+import logging
 import os
 import shutil
 import subprocess
@@ -8,6 +9,7 @@ from pathlib import Path
 from utils import build_video_url, get_subprocess_creationflags
 
 YOUTUBE_EXTRACTOR_ARGS = "youtube:player_client=android,web"
+LOGGER = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -25,7 +27,11 @@ class PlaylistInspectionResult:
     unavailable_count: int
 
 
-def download_audio(task_id, link, output_dir, ytdlp_path, update_task):
+class DownloadError(RuntimeError):
+    """Raised when yt-dlp cannot produce the requested MP3."""
+
+
+def download_audio(task_id, link, output_dir, ytdlp_path, update_task, ffmpeg_path=None):
     """Download a single YouTube URL to MP3 and return the final file path."""
     update_task(task_id, "Status", "Downloading...")
 
@@ -52,11 +58,14 @@ def download_audio(task_id, link, output_dir, ytdlp_path, update_task):
             output_template,
             "--force-overwrite",
             "--no-progress",
-            link.strip(),
         ]
+        if ffmpeg_path is not None:
+            command.extend(["--ffmpeg-location", str(Path(ffmpeg_path).parent)])
+        command.append(link.strip())
 
         result = subprocess.run(
             command,
+            stdin=subprocess.DEVNULL,
             check=True,
             capture_output=True,
             text=True,
@@ -64,7 +73,8 @@ def download_audio(task_id, link, output_dir, ytdlp_path, update_task):
             errors="replace",
             creationflags=get_subprocess_creationflags(),
         )
-        print("yt-dlp stderr:", result.stderr)
+        if result.stderr:
+            LOGGER.debug("yt-dlp stderr: %s", result.stderr)
 
         downloaded_files = list(temp_download_subdir.glob("*.mp3"))
         if not downloaded_files:
@@ -75,21 +85,24 @@ def download_audio(task_id, link, output_dir, ytdlp_path, update_task):
 
         target_mp3_path = Path(output_dir) / original_mp3_path.name
         shutil.move(str(original_mp3_path), str(target_mp3_path))
-        print(f"Moved {original_mp3_path.name} to {target_mp3_path}")
+        LOGGER.debug("Moved %s to %s", original_mp3_path.name, target_mp3_path)
         return target_mp3_path, temp_download_subdir
 
     except subprocess.CalledProcessError as error:
         update_task(task_id, "Status", "Error: Download failed")
-        print(f"Error during download: {error}\nStderr:\n{error.stderr}")
+        LOGGER.error("Download failed: %s\nStderr:\n%s", error, error.stderr)
+        _cleanup_temp_directory(temp_download_subdir)
+        raise DownloadError("Download failed") from error
     except FileNotFoundError as error:
         update_task(task_id, "Status", "Error: File Missing")
-        print(f"Error: {error}")
+        LOGGER.error("Required download file is missing: %s", error)
+        _cleanup_temp_directory(temp_download_subdir)
+        raise DownloadError(str(error)) from error
     except Exception as error:
         update_task(task_id, "Status", "Error: Download failed")
-        print(f"An unexpected error occurred during download: {error}")
-
-    _cleanup_temp_directory(temp_download_subdir)
-    return None, None
+        LOGGER.exception("Unexpected error during download")
+        _cleanup_temp_directory(temp_download_subdir)
+        raise DownloadError(str(error)) from error
 
 
 def inspect_playlist_metadata(playlist_url, ytdlp_path):
@@ -107,6 +120,7 @@ def inspect_playlist_metadata(playlist_url, ytdlp_path):
 
     result = subprocess.run(
         command,
+        stdin=subprocess.DEVNULL,
         check=True,
         capture_output=True,
         text=True,
@@ -153,4 +167,4 @@ def _cleanup_temp_directory(temp_download_subdir):
         if temp_download_subdir.exists():
             shutil.rmtree(temp_download_subdir)
     except Exception as cleanup_error:
-        print(f"Error cleaning up temp directory {temp_download_subdir}: {cleanup_error}")
+        LOGGER.warning("Could not clean temporary directory %s: %s", temp_download_subdir, cleanup_error)

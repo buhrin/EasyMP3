@@ -1,0 +1,35 @@
+#easy-mp3-download {
+  align-items:center;
+  --easy-mp3-background:rgba(0,0,0,.05);
+  --easy-mp3-text:#0f0f0f;
+  --easy-mp3-hover:rgba(0,0,0,.1);
+  background:var(--easy-mp3-native-background,var(--easy-mp3-background));
+  border:0;
+  border-radius:20px;
+  box-sizing:border-box;
+  color:var(--easy-mp3-native-text,var(--easy-mp3-text));
+  cursor:pointer;
+  display:inline-flex;
+  flex:none;
+  font:500 14px Roboto,Arial,sans-serif;
+  gap:6px;
+  height:40px;
+  width:160px;
+  min-width:160px;
+  max-width:160px;
+  justify-content:center;
+  margin-left:8px;
+  padding:0 16px;
+  white-space:nowrap;
+}
+html[dark] #easy-mp3-download {
+  --easy-mp3-background:rgba(255,255,255,.1);
+  --easy-mp3-text:#f1f1f1;
+  --easy-mp3-hover:rgba(255,255,255,.2);
+}
+#easy-mp3-download:hover { background:var(--easy-mp3-hover) }
+#easy-mp3-download[data-parent-gap="true"] { margin-left:0 }
+#easy-mp3-download:disabled { cursor:default; opacity:1 }
+#easy-mp3-download[data-state="error"] { background:#ffd8d8; color:#8b0000 }
+#easy-mp3-download .easy-mp3-icon { flex-shrink:0; height:24px; object-fit:contain; width:24px }
+#easy-mp3-download .easy-mp3-label { min-width:0; overflow:hidden; text-overflow:ellipsis }

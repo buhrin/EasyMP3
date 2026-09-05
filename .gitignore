@@ -1,4 +1,7 @@
 build/
 dist/
 *.spec
+package/
 __pycache__/
+node_modules/
+.venv/

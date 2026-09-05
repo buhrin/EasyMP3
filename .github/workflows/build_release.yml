@@ -8,7 +8,10 @@ on:
 permissions: write-all # Needed to create releases and upload assets
 
 jobs:
+  checks:
+    uses: ./.github/workflows/ci.yml
   build:
+    needs: checks
     runs-on: windows-latest # Use a Windows runner since we need .exe
 
     steps:
@@ -17,16 +20,16 @@ jobs:
       with:
         fetch-depth: 0 # Fetch all history for all tags and branches
 
-    - name: Set up Python
-      uses: actions/setup-python@v5
+    - name: Set up uv
+      uses: astral-sh/setup-uv@v9
       with:
-        python-version: '3.x' # Use a recent Python 3 version
+        enable-cache: true
+
+    - name: Set up Python
+      run: uv python install
 
     - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install pyinstaller
-        pip install pyperclip sv-ttk # Added dependencies for clipboard and theme
+      run: uv sync --locked
 
     - name: Determine version
       id: version # Give the step an ID to reference its outputs
@@ -61,7 +64,13 @@ jobs:
 
     - name: Build executable with PyInstaller
       run: |
-        pyinstaller --onefile --windowed --name EasyMP3 --icon=src/assets/icon.ico --add-data "bin;bin" --add-data "src/assets;assets" src/main.py
+        uv run --locked pyinstaller --onefile --windowed --name EasyMP3 --icon=src/assets/icon.ico --add-data "bin;bin" --add-data "src/assets;assets" src/main.py
+
+    - name: Build Native Messaging helper
+      run: uv run --locked pyinstaller --onedir --console --name EasyMP3Host --add-data "bin;bin" src/native_host.py
+
+    - name: Package extension and helper
+      run: uv run --locked python scripts/package_release.py --output package
 
     - name: Create Release and Upload Asset
       uses: softprops/action-gh-release@v2
@@ -72,6 +81,9 @@ jobs:
           Automated build of EasyMP3 ${{ steps.version.outputs.new_tag }}.
           Based on commit ${{ github.sha }}.
           Download the EasyMP3.exe file below.
-        files: dist/EasyMP3.exe # Path to the built executable to upload
+        files: |
+          dist/EasyMP3.exe
+          package/EasyMP3-native-host.zip
+          package/EasyMP3-extension.zip
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} # Provided by GitHub Actions

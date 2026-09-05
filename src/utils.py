@@ -1,3 +1,4 @@
+import ctypes
 import subprocess
 import sys
 from dataclasses import dataclass
@@ -11,6 +12,7 @@ YOUTUBE_HOSTS = {
     "music.youtube.com",
 }
 SHORT_YOUTUBE_HOSTS = {"youtu.be", "www.youtu.be"}
+_external_subprocesses_prepared = False
 
 
 @dataclass(frozen=True)
@@ -49,6 +51,25 @@ def get_run_directory():
 
 def get_subprocess_creationflags():
     return subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
+
+
+def prepare_external_subprocesses():
+    """Restore the normal Windows DLL search path for external executables.
+
+    PyInstaller sets a process-wide DLL directory for bundled Python modules.
+    External yt-dlp and FFmpeg processes must not inherit that directory. Call
+    this once on the main thread, after bundled modules have been imported and
+    before worker threads start.
+    """
+    global _external_subprocesses_prepared
+    if _external_subprocesses_prepared:
+        return
+
+    if sys.platform == "win32" and getattr(sys, "frozen", False):
+        if not ctypes.windll.kernel32.SetDllDirectoryW(None):
+            raise ctypes.WinError(ctypes.get_last_error())
+
+    _external_subprocesses_prepared = True
 
 
 def truncate_display_value(value, max_length=60):
